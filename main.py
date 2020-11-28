@@ -5,12 +5,16 @@ import cplex
 import random
 import math
 import numpy as np
+import copy
 
 # GLOBAL
 timeLimitValue = 3600 * 3
 delta = 0.00001
 local = True
 bestDecision = 0
+maxColorGlobal = []
+
+grath = {}
 
 paths = [
     'http://iridia.ulb.ac.be/~fmascia/files/DIMACS/C125.9.clq',
@@ -66,11 +70,26 @@ localHARDPaths = [
 
 # -----------------------------------------------TEST-------------------------------
 # matrixTest = np.zeros((4, 4))
+# matrixTest = np.array([
+#     [1, 1, 0, 0],
+#     [1, 1, 1, 0],
+#     [0, 1, 1, 1],
+#     [1, 0, 1, 1]])
+
+# matrixTest = np.array([
+#     [1, 1, 0, 0, 0],
+#     [1, 1, 1, 1, 1],
+#     [0, 1, 1, 0, 0],
+#     [0, 1, 0, 1, 0],
+#     [0, 1, 0, 0, 1]])
+
 matrixTest = np.array([
-    [1, 1, 0, 0],
-    [1, 1, 1, 0],
-    [0, 1, 1, 1],
-    [1, 0, 1, 1]])
+    [1, 1, 0, 0, 0, 0],
+    [1, 1, 1, 0, 0, 0],
+    [0, 1, 1, 1, 0, 0],
+    [0, 0, 1, 1, 1, 0],
+    [0, 0, 0, 1, 1, 1],
+    [0, 0, 0, 0, 1, 1]])
 
 
 # matrixTest = np.array([
@@ -171,7 +190,7 @@ def getWithMaxColorNumber(matrix, n, coloredEdges):
         for j in range(n):
             if matrix[i, j] == 1 and i != j and coloredEdges[j] not in colorTmpCounter:
                 colorTmpCounter.append(coloredEdges[j])
-        if len(colorTmpCounter) == maxColorCount:
+        if len(colorTmpCounter) == maxColorCount and len(colorTmpCounter) > 0:
             maxColorCountEdges.append(i)
         if len(colorTmpCounter) > maxColorCount:
             maxColorCount = len(colorTmpCounter)
@@ -181,7 +200,6 @@ def getWithMaxColorNumber(matrix, n, coloredEdges):
 
 # эвристический поиск клики (с помощью раскрашенного графа)
 def findEvristicClique(maxColorCandidatARRAY, matrix, n, coloredEd):
-    # print('erfsdfsdf ', maxColorCandidatARRAY)
 
     # Находим соседей выбранных вершин и их пересечение в следующих циклах
     lengthData = len(maxColorCandidatARRAY)
@@ -194,15 +212,13 @@ def findEvristicClique(maxColorCandidatARRAY, matrix, n, coloredEd):
     clickEvr = []
     clickCandidat = listOfNeiborsList[0]
 
-    # print('listOfNeiborsList ', listOfNeiborsList)
+
     for k in range(lengthData):
         clickCandidat = list(set(clickCandidat) & set(listOfNeiborsList[k]))
 
     if (len(clickCandidat) > 0):
         clickEvr = maxColorCandidatARRAY
-        # print(' !!!!-- > ',len(clickEvr))
     else:
-        # print('gabella')
         clickEvr = [random.choice(maxColorCandidatARRAY)]
         for i in range(n):
             if matrix[clickEvr[0], i] == 1 and i != clickEvr[0]:
@@ -248,10 +264,8 @@ def findEvristicClique(maxColorCandidatARRAY, matrix, n, coloredEd):
 
     return findClickEvr(clickEvr, clickCandidat, matrix)
 
-
 # запуск всего механизма эвристики
 def evristic(path):
-    print('---evristic')
     n, m, confusion_matrix = openGraph(path)
 
     # ----------------TEST
@@ -266,10 +280,7 @@ def evristic(path):
     maxColor = getWithMaxColorNumber(confusion_matrix.copy(), n, coloredEd)
 
     bestEvrValue = -1
-    bestEvrFinal = []
     bestEvrStore = []
-
-    print('--------------maxColor---------- ', len(maxColor))
 
     for i in range(5000):
         randomEdges = random.sample(maxColor, 3)
@@ -302,31 +313,58 @@ def evristic(path):
 
 
 # ---------------------------------------------------------------------
-# локальный поиск
-def localSearch(graphNeighbors):
-    N = len(graphNeighbors)
-    # firstElement = random.randint(0, N-1)
-    firstElement = 3
-    tightness = [0 for i in range(N)]
-    freeVertex = [i for i in range(N)]
-    bindedVertex = []
-    candidatsVertex = [firstElement]
-    # indSet = [0 for i in range(N)]
-    # indSet = [firstElement]
+def indSetSearch(matrixGraph, neighborsGraph):
+    coloredEd = colorGreedy(matrixGraph.copy(), len(matrixGraph))
+    indSet = evristicIndSetSearch(coloredEd)
+    weight = [0.5 for i in range(len(matrixGraph))]
+    sumMax = 0
+    indSetMax = []
+    for i in range(100):
+        sum, indSet = localSearch(neighborsGraph, indSet, weight)
+        if sumMax < sum:
+            sumMax = sum
+            indSetMax = copy.copy(indSet)
+    return sumMax, indSetMax
 
-    # indSet[firstElement] = 1;
+def evristicIndSetSearch(colored):
+    randomVertex = random.randint(0, len(colored)-1)
+    randomColor = colored[randomVertex]
+    indSet = []
+    for i in range(len(colored)):
+        if colored[i] == randomColor:
+            indSet.append(i)
+    return indSet
+
+# локальный поиск
+def localSearch(graphNeighbors, indSet, weight):
+    N = len(graphNeighbors)
+    # statusArray:
     # 1 - indSet
     # 2 - freeVertex
     # 3 - bindedVertex
+    tightness = [0 for i in range(N)]
     statusArray = [2 for i in range(N)]
-    statusArray[firstElement] = 1
-    for i in range(len(graphNeighbors[firstElement])):
-        index = graphNeighbors[firstElement][i]
-        tightness[index] += 1
-        statusArray[index] = 3
-        # freeVertex.remove(index)
-        # bindedVertex.append(index)
-    while (len(candidatsVertex) > 0):
+    for i in range(N):
+        if i in indSet:
+            statusArray[i] = 1
+            for j in range(len(graphNeighbors[i])):
+                tightness[graphNeighbors[i][j]] += 1
+                statusArray[graphNeighbors[i][j]] = 3
+        else:
+            if tightness[i] == 0:
+                statusArray[i] = 2
+    candidatsVertex = []
+
+    for i in range(len(indSet)):
+        tightCount = 0
+        for j in range(len(graphNeighbors[i])):
+            if tightness[graphNeighbors[i][j]] == 1:
+                tightCount+=1
+                if tightCount >= 2:
+                    candidatsVertex.append(i)
+                    break
+
+    while len(candidatsVertex) > 0 :
         vertForSwap = random.choice(candidatsVertex)
         u = -1
         v = -1
@@ -344,18 +382,18 @@ def localSearch(graphNeighbors):
             statusArray[vertForSwap] = 3
             candidatsVertex.append(u)
             candidatsVertex.append(v)
+            candidatsVertex.remove(vertForSwap)
             for j in range(len(graphNeighbors[vertForSwap])):
                 tmpIndex = graphNeighbors[vertForSwap][j]
                 tightness[tmpIndex] -= 1
+                # ???
+                if tightness[tmpIndex] == 0 and statusArray[tmpIndex] == 3:
+                    statusArray[tmpIndex] = 2
                 if tightness[tmpIndex] == 1:
-                    intSetTmp = list(filter(lambda x: x == 1, statusArray))
-                    for z in range(len(intSetTmp)):
-                        if tmpIndex in graphNeighbors[intSetTmp[z]]:
-                            candidatsVertex.append(intSetTmp[z])
-
-                # if tightness[graphNeighbors[vertForSwap][j]] == 0:
-                #     statusArray[tightness[graphNeighbors[vertForSwap][j]]] = 2
-
+                    for z in range(len(statusArray)):
+                        if statusArray[z] == 1:
+                            if tmpIndex in graphNeighbors[statusArray[z]]:
+                                candidatsVertex.append(z)
             for j in range(len(graphNeighbors[u])):
                 tmpIndex = graphNeighbors[u][j]
                 tightness[tmpIndex] += 1
@@ -370,10 +408,13 @@ def localSearch(graphNeighbors):
         else:
             candidatsVertex.remove(vertForSwap)
             continue
-    indSetT = list(filter(lambda x: x == 1, statusArray))
-    for i in range(len(indSetT)):
-        print(' ', i)
-
+    sumWeight = 0
+    answer = []
+    for i in range(len(statusArray)):
+        if statusArray[i] == 1:
+            sumWeight += weight[i]
+            answer.append(i)
+    return sumWeight, answer
 
 # ---------------------------------------------------------------------
 # ---------------------------------------------------------------------
@@ -433,8 +474,8 @@ def initalClickCPLEX(constrains,
 # -------------------------------------------------------------
 # -------------------------------------------------------------
 # функция, которую запускаем в отедльном процессе, чтобы была возможность остановить по времени
-def bnbContainer(evristicPower, evristicValues, matrix, n, graph, return_dict):
-    start_BNB_time = time.time()
+def bncContainer(evristicPower, evristicValues, matrix, n, graph, return_dict):
+    start_BNC_time = time.time()
     constrains = []
     constrainsNames = []
     constrainsTypes = []
@@ -458,18 +499,17 @@ def bnbContainer(evristicPower, evristicValues, matrix, n, graph, return_dict):
     return_dict['power'] = evristicPower
     return_dict['values'] = evristicValues
 
-    result, resultValues = BNB(evristicValues, maxCliqueModel, return_dict)
+    result, resultValues = BNC(evristicValues, maxCliqueModel, return_dict)
     print('grapth NAME ', graph)
-    print("--- %s seconds BNB ---" % (time.time() - start_BNB_time))
+    print("--- %s seconds BNC ---" % (time.time() - start_BNC_time))
     print('!!!!! result ', result)
     print('!!!!! resultValues ', resultValues)
 
 
 #     проход по всем графам из файлов и запуск эвристики и bnb для каждого
-def bnbStartEngine(graphs):
+def bncStartEngine(graphs):
     for i in range(len(graphs)):
         evristicPower, evristicValues, matrix, n = evristic(graphs[i])
-        print('new ittt')
         if __name__ == '__main__':
             global timeLimitValue
             manager = multiprocessing.Manager()
@@ -477,13 +517,13 @@ def bnbStartEngine(graphs):
             return_dict['power'] = 0
             return_dict['values'] = []
             print('start bnb for ', graphs[i])
-            p = multiprocessing.Process(target=bnbContainer,
+            p = multiprocessing.Process(target=bncContainer,
                                         args=(evristicPower, evristicValues, matrix, n, graphs[i], return_dict))
             p.start()
             p.join(timeLimitValue)
             if p.is_alive():
                 p.terminate()
-                print("--- %s seconds LIMIT BNB ---" % timeLimitValue)
+                print("--- %s seconds LIMIT BNC ---" % timeLimitValue)
                 print('!!!!! TIMEOUT result ', return_dict['power'])
                 print('!!!!! TIMEOUT resultValues ', return_dict['values'])
 
@@ -517,10 +557,48 @@ def solveWithCPLX(maxCliqueModel):
     maxCliqueModel.solve()
     return maxCliqueModel.solution.get_values()
 
+def branching(N,currentDecisionValue):
+    flag = False
+    for index in range(N):
+        currentDecisionValue[index] = numberWithDelta(currentDecisionValue[index], 1, 0, delta)
+        if currentDecisionValue[index] != 0 and currentDecisionValue[index] != 1:
+            flag = True
+            break
+    return index, flag;
 
-# BNB
-def BNB(bestDecisionValue, maxCliqueModel, return_dict):
+def addComplexConstrain(maxCliqueModel, indSetMax):
+
+    constrains = []
+    constrainsNames = []
+    constrainsTypes = []
+    constrainsRightParts = []
+
+    variables = []
+    constrainsName = "constraint"
+
+    for i in range(len(indSetMax)):
+        variables.append("y" + str(indSetMax[i]))
+        constrainsName = constrainsName + "_" + str(indSetMax[i])
+    constrains.append([variables])
+    constrainsNames.append(constrainsName)
+    constrainsTypes.append('L')
+    constrainsRightParts.append(1.0)
+
+    maxCliqueModel.linear_constraints.add(
+        lin_expr=constrains,
+        rhs=constrainsRightParts,
+        names=constrainsNames,
+        senses=constrainsTypes)
+
+    maxCliqueModel.set_log_stream(None)
+    maxCliqueModel.set_warning_stream(None)
+    maxCliqueModel.set_results_stream(None)
+
+# BNС
+def BNC(bestDecisionValue, maxCliqueModel, return_dict):
     global bestDecision
+    global grath
+    global delta
     currentDecisionValue = solveWithCPLX(maxCliqueModel)
     N = len(currentDecisionValue)
 
@@ -529,16 +607,28 @@ def BNB(bestDecisionValue, maxCliqueModel, return_dict):
     for i in range(N):
         currentDecision = currentDecision + currentDecisionValue[i]
 
-    global delta
+
     if math.floor(currentDecision + delta) <= bestDecision:
         return bestDecision, bestDecisionValue
 
-    flag = False
-    for index in range(N):
-        currentDecisionValue[index] = numberWithDelta(currentDecisionValue[index], 1, 0, delta)
-        if currentDecisionValue[index] != 0 and currentDecisionValue[index] != 1:
-            flag = True
-            break
+    # NEW BNC HERE
+    sumMax, indSetMax = indSetSearch(confusion_matrix, grath)
+
+    while sumMax > 1 and len(indSetMax) > 0:
+        addComplexConstrain(maxCliqueModel, indSetMax)
+        currentDecisionValue = solveWithCPLX(maxCliqueModel)
+
+        N = len(currentDecisionValue)
+        currentDecision = 0
+        for i in range(N):
+            currentDecision = currentDecision + currentDecisionValue[i]
+        if math.floor(currentDecision + delta) <= bestDecision:
+            return bestDecision, bestDecisionValue
+
+        sumMax, indSetMax = indSetSearch(confusion_matrix, grath)
+    # NEW BNC END
+    index, flag = branching(N,currentDecisionValue)
+
     if index == N - 1 and flag == False:
         if currentDecision > bestDecision:
             print('new bestDecision ', bestDecision, currentDecision)
@@ -551,24 +641,37 @@ def BNB(bestDecisionValue, maxCliqueModel, return_dict):
 
         return bestDecision, bestDecisionValue
 
+
     addConstrain(index, 1, maxCliqueModel)
 
-    BNB(bestDecisionValue, maxCliqueModel, return_dict)
+    BNC(bestDecisionValue, maxCliqueModel, return_dict)
 
     removeConstrain(index, maxCliqueModel)
 
     addConstrain(index, 0, maxCliqueModel)
 
-    BNB(bestDecisionValue, maxCliqueModel, return_dict)
+    BNC(bestDecisionValue, maxCliqueModel, return_dict)
 
     removeConstrain(index, maxCliqueModel)
 
     return bestDecision, bestDecisionValue
 
+def getMaxNeighbors(grath):
+    maxNeighborsTmp = []
+    maxNeighborsValue = -1
+    for i in range(len(grath)):
+        if len(grath[i]) == maxNeighborsValue:
+            maxNeighborsTmp.append(i)
+        if len(grath[i]) > maxNeighborsValue:
+            maxNeighborsTmp = [i]
+            maxNeighborsValue = len(grath[i])
+    return maxNeighborsTmp
 
 # MAIN
 if __name__ == '__main__':
-    grath = graphByNeighborhoods(matrixTest, len(matrixTest))
-    localSearch(grath)
+    global grath
+    n, m, confusion_matrix = openGraph(localPaths[0])
+    grath = graphByNeighborhoods(confusion_matrix, len(confusion_matrix))
+    # indSetSearch(confusion_matrix, grath)
     # bnbStartEngine(localPaths)
-    # bnbStartEngine(paths)
+    bncStartEngine(paths)
